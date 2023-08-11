@@ -1,0 +1,882 @@
+---
+title: "Predicting machine failure using R"
+subtitle: 'Data manipulation and models implementation'
+author: "Ali Yaddaden"
+date: "January 2023"
+output: html_document
+---
+# Packages
+
+For this course, we will use the following packages:
+
+- `caret`: this package is used for data manipulation and model training
+- `class`: this package is used for implementing the k-nearest neighbors algorithm
+- `rpart`: this package is used for implementing decision trees
+- `rpart.plot`: this package is used for plotting decision trees
+- `e1071`: this package is used for implementing support vector machines
+- `nnet`: this packge is used for implementing neural networks
+
+```{R}
+    library(caret)
+    library(class)
+    library(rpart)
+    library(rpart.plot)
+    library(e1071)
+    library(nnet)
+    library(dplyr)
+    ```
+
+
+If you don't have these packages make sure you install them using the following command: install.packages("package_name")
+
+*Remember that at any time, if you do not understand a function, you can use help(function_name) to get more information about it.*
+
+# Introduction
+
+In this course, you will learn how to perform classification using R.
+For this, you are going to work on a Predictive Maintenance task.
+The goal of this task is to predict if a machine will fail or not.
+To do so, you will use a dataset containing different metric values
+measured for each machine and the target which indicates if the machine failed or not.
+
+Before diving into the code, we will first explain the different steps you will follow to solve this task.
+First, you need to understand the data by performing an exploratory data analysis.
+Then, you need to prepare the data for the machine learning model, i.e. identify which features are relevant and which are not.
+After that, you will train a machine learning model and evaluate its performance. You will discover which metrics are used to evaluate the performance of a classification model and how to interpret them.
+Furthermore, you will discover other machine learning models and compare them to the first model you trained.
+Finally, you will synthetize your work and present your results.
+
+
+# 1. Understanding the dataset
+
+## 1.1 Load the data
+Your first step is to load the data into R. To do so, you will use the read.csv() function to load the data. The dataset is stored in a csv file called "maintenace_predictive_small.csv". The data is stored in the same folder as the R script.
+
+```{R}
+    # Load the dataset from maintenace_predictive_small.csv
+    # TODO: load the dataset
+
+Maintenance <- read.csv('maintenance_predictive_small.csv')
+```
+
+## 1.2 Exploratory Data Analysis
+After loading the dataset, you will perform some explorative data analysis. This will help you understand and identify any issues with the data.
+For this, we propose the following steps:
+
+
+* Check the first rows of the data. This will help you to identify the features and the target and their corresponding values.
+* Check the number of rows and columns (number of observations and features)
+* Check the data type of each feature
+* Check if there are missing values
+* Check the number of unique values for each feature
+* Check the summary of the data (mean, median, min, max, etc.)
+* Count the number of observations for each class
+
+```{R}
+
+    #TODO: Check the first 6 rows of the data
+    head(Maintenance)
+    
+    #TODO: Check the number of rows and columns
+    
+    nrow(Maintenance)
+    ncol(Maintenance)
+    
+    #TODO: Check the data type
+    
+    class(Maintenance)
+    class(Maintenance$UDI)
+    class(Maintenance$ProductID)
+    class(Maintenance$Type)
+    class(Maintenance$AirTemperature)
+    class(Maintenance$ProcessTemperature)
+    class(Maintenance$RotationalSpeed)
+    class(Maintenance$Torque)
+    class(Maintenance$ToolWear)
+    class(Maintenance$MachineFailure)
+    class(Maintenance$TWF)
+    class(Maintenance$HDF)
+    class(Maintenance$PWF)
+    class(Maintenance$OSF)
+    class(Maintenance$RNF)
+    
+    #TODO: Check the number of missing values
+    
+    table(is.na(Maintenance))
+    
+    #TODO: Check the number of unique values
+    
+    unique_summary <- sapply(Maintenance, unique)
+    
+    #TODO: Check the summary of the data
+    
+    summary(unique_summary)
+    
+    #TODO: Count the number of positive and negative observations using of the label Machine.failure
+    # label 1 : failure, label 0 : no failure
+    
+    table(Maintenance$MachineFailure)
+```
+
+**Question**: Based on the results obtained from the explorative data analysis, describe the dataset and summarize your findings. 
+
+The exploratory data analysis performed reveals 500 records of a state of machine to describe if the machine failed or not. The data frame consists of 14 variables consisting of fourteen variables in total - two character variables and twelve numeric variables. These variables are:
+
+- **UID:** unique identifier
+- **productID:** consisting of a letter L, M, or H for low (50% of all products), medium (30%), and high (20%) as product quality variants and a variant-specific serial number.
+- **Type:** L, M, or H
+- **Air Temperature** [K]
+- **Process Temperature** [K]
+- **Rotational Speed** [rpm]
+- **Torque** [Nm]
+- **Tool Wear** [min]
+- **Machine Failure:** 0 machine didn’t fail, 1 machine failed
+- **TWF:** tool wear failure
+- **HDF:** heat dissipation failure
+-**PWF:** power failure
+- **OSF:** overstrain failure
+- **RNF:**  random failures.
+
+All 500 records are complete with no missing variable, so the dataframe is of good quality. Out of the 500 recorded states of the machines, the machine failed 250 and didn't fail for the other 250 times. 
+
+## 1.3 Data Preprocessing
+After performing the explorative data analysis, your next step is to do some data preprocessing.
+The goal of this step is to prepare the data for the machine learning model.
+In this first approach, you will split the dataset into training and test set.
+As you might have guessed, when doing machine learning, you have two steps: training and testing.
+The training step uses the train set to make the model learn, i.e. the learning algorithm attemps to discover relationships that links the features to the target.
+The test step uses the test set to evaluate how good is the learned model on unseen data (the test set in not used during training).
+
+
+To do so, we propose the following steps:
+
+* Select the appropriate features and the target
+* Plot your curated dataset
+* Check the correlation between your selected features
+* Split the data into training and test set. In general, we use 80% of the data for training and 20% for test. To split the data, you can either use the base R with the `sample` function or the `caret` package with the `createDataPartition` function.
+* Check the number of observations in the train and test sets to make sure you have the right proportions.
+
+If you want to use createDataPartition, the syntax is `createDataPartition(y, p, list)`, where:
+
+- `y` is the target
+- `p` is the proportion of the data used for training, i.e. 0.8 for 80% of the data used for training.
+- `list` argument is a boolean indicating if the function returns a list or a vector, in this case, you will set it to FALSE to return a vector.
+
+
+
+```{r}
+    #TODO: prepare the dataset
+
+    Maintenance <-read.csv('maintenance_predictive_small.csv')
+    Maintenance1 <- Maintenance[,4:9]
+    Maintenance1$MachineFailure <- as.factor(Maintenance1$MachineFailure)
+    Maintenance1_Scaled <- Maintenance1  #with only numeric variables
+    Maintenance1_Scaled[,1:5] <- scale(Maintenance1_Scaled[,1:5])
+    
+    
+    #spliting data into '80% for Train' and '20% for Test' for unscaled
+    set.seed(1)
+    idx<- createDataPartition(Maintenance1$MachineFailure, p= 0.8, list = F)
+    Train <- Maintenance1[idx, ] #train dataset
+    Test <- Maintenance1[-idx, ] #test dataset
+    
+    #spliting data into '80% for Train' and '20% for Test' for scaled
+    set.seed(1)
+    idx2<- createDataPartition(Maintenance1_Scaled$MachineFailure, p= 0.8, list = F)
+    Train_Scaled <- Maintenance1_Scaled[idx2, ] #train dataset
+    Test_Scaled <- Maintenance1_Scaled[-idx2, ] #test dataset
+    
+```
+
+The variables necessary for our modeling are selected which are the independent variables of  *** Air Temperature, Process temperature, Rotational speed, Torque and tool wear*** and the dependent variable of ***Machine Failure*** and put into the dataframe called 'Maintenance1'. The data is partitioned into ***80% for Train*** and ***20% for Test***.
+
+A scaled version of the selected variables is also created  called 'Maintenance1_Scaled' and the same data partitioning is carried out.
+
+
+# 2. Training and evaluating your first model
+
+## 2.1 Training a logistic regression model
+
+After performing the data preprocessing, you will train your first model.
+We will use a logistic regression model. The logistic regression model is a **parametric** model for classification problems.
+The logistic regression model is a linear model that uses the sigmoid function to transform the output of the linear model into a probability.
+The sigmoid function is defined as follows:
+$$\sigma(x) = \frac{1}{1 + e^{-x}}$$
+
+
+In R, we use the `glm` function that implements many types of generalized linear models, one of them being logistic regression.
+The syntax for logistic regression is `glm(formula, data, family = "binomial")`
+where:
+
+- `formula`: is a symbolic description of the model to be fitted. The syntax is `target_name ~ feature1_name + feature2_name + ... + featurek_name` when you want to predict the target using specific features, or `target_name ~ .` when you want to use all the features to predict the target.
+- `data`: the dataset we want to use for training.
+- `family`: in this case, we use binomial to tell that we want using a logistic regression model.
+
+```{R}
+    #TODO: Train a logistic regression model
+
+ Glm_model <- glm(data = Train, MachineFailure ~., family = "binomial")
+
+```
+
+Once train, you can use the `coef()` function to check the coefficients of your model. The coefficients are the weights associated with the features. The higher the weight, the more important the feature is for the model.
+
+```{R}
+    #TODO: Check the coefficients of the model
+    coef(Glm_model)
+    
+```
+From t
+
+You can also use `summary()` function to get more information about the model. In particular, you can check the p-values of the features.
+The p-value is a measure of the significance of the feature. The lower the p-value, the more significant the feature is for the model.
+
+```{R}
+    #TODO: Check the summary of the model
+
+    summary(Glm_model)
+    
+```
+From the model summary, the 'Air temperature' has the most influence on causing a machine failure, while the 'Process temperature' has the most reverse influence on causing a machine not to fail. The p-values of the coefficients shows that each of the variable is relevant. 
+
+Next, you will use your trained model to make predictions on the test set. To do so, you will use the `predict()` function.
+The syntax for `predict()` is `predict(model, newdata, type = "response")` where:
+
+- `model`: the model you want to use for prediction
+- `newdata`: the dataset you want to use for prediction
+- `type`: the type of prediction you want to do. In this case, we want to predict the probability of failure, so we use `type = "response"`.
+
+The `predict()` function will return a vector of probabilities: P(Y=1|X) where Y is the target and X is the features.
+In order to compare the predicted probabilities with the true labels, we need to convert the probabilities into labels;
+i.e. 1 if the probability is greater than 0.5 and 0 otherwise. For this, you can use the `ifelse()` function.
+
+```{r}
+     #TODO: Using the model to predict an outcome
+
+    Glm_model_Pred_Train <- predict(Glm_model, Train, type = "response")
+    
+    Glm_model_Pred_Test <- predict(Glm_model, Test, type = "response")
+
+
+```
+
+
+
+Finally, you will evaluate the performance of your model. In this case, we will use the accuracy as a performance metric.
+The accuracy is the proportion of observations for which the predicted label is equal to the true label.
+
+```{R}
+    #TODO: Check the accuracy of the model on the test set
+    
+    # Writing a function for computing the metrics of a prediction
+    #compute_metrics <- function(actual,predicted){
+     # predcted <- as.factor(predicted)
+      #actual <- as.factor(actual)
+      #xtab <- table(Train$MachineFailure, Log_Model_Pred_Train >= 0.5)
+      #xtab
+      #cm <- confusionMatrix(as.factor(Log_Model_Pred_Train >= 0.5), as.factor(Train$MachineFailure), positive = "True")
+      #cm
+      #Rec <- recall(xtab)
+      #Prec <- precision(xtab)
+      #F1Score <- F_meas(xtab)
+      #return(list(Cm, Rec, Prec, F1Score ))
+    #}
+    
+```
+
+
+```{R}
+    #TODO: Check the accuracy of the model on the test set
+    #Accuracy
+
+    Glm_Test_Cm <- table(Test$MachineFailure, Glm_model_Pred_Test >= 0.5)
+    Glm_Test_Cm
+    
+    Glm_Test_Acc = (44 + 42)/(44 + 42 + 6 + 8)
+    Glm_Test_Pre = 42 / (42 +6)
+    Glm_Test_Rec = 42 / (42 +8)
+    Glm_Test_F1 = (2 * Glm_Test_Pre * Glm_Test_Rec) / (Glm_Test_Pre + Glm_Test_Rec)
+    
+    Glm_Test_Acc
+    Glm_Test_Pre
+    Glm_Test_Rec
+    Glm_Test_F1
+    
+```
+Using the logistic model to predict on the unseen 'Test' data, an accuracy of 0.86 is achieved, and F1 score of 0.86 also. 
+
+
+Let us note that if you do not give a dataset for the `newdata` argument, the `predict()` function will use the dataset used for training.
+In other words, it will predict the labels of the observations used for training.
+This can be useful to compare the performance of the model on the training set and the test set.
+
+**Question**: Describe the performance of the model on the training set and the test set.
+```{R}
+    #TODO: Check the accuracy of the model on the train set
+    Glm_Train_Cm <- table(Train$MachineFailure, Glm_model_Pred_Train >= 0.5)
+    Glm_Train_Cm
+    
+    Glm_Train_Acc = (163 + 163)/(163 + 163 + 37 + 37)
+    Glm_Train_Acc
+```
+Using the model on the 'Train' data, an accuracy of 0.82 is achieved. 
+
+## 2.2 Other evaluation metrics
+The accuracy is a good metric to evaluate the performance of a model. However, it does not provide all the information about the performance of a model.
+In this section, we will see other metrics that offer addional information about the performance of a model.
+
+### 2.2.1. The confusion matrix
+The confusion matrix is a table that summarizes the performance of a classification model.
+For a binary classification problem, it is composed of 4 cells: true positive (TP), true negative (TN), false positive (FP), and false negative (FN).
+The confusion matrix is defined as follows:
+
+|                          | **Actual positive** | **Actual negative** |
+| ---                      | ---                 | ---                 |
+|  Predicted positive      | TP                  | FP                  |
+|  Predicted negative      | FN                  | TN                  |
+
+
+The accuracy is the proportion of correct predictions,
+i.e. the proportion of observations for which the predicted label is equal to the real label.
+It is defined as follows:
+
+$$
+\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}
+$$
+
+
+The precision is the proportion of positive predictions that are correct among all the positive predictions,
+It is defined as follows:
+
+$$
+\text{Precision} = \frac{TP}{TP + FP}
+$$
+
+The recall is the proportion of positive predictions that are correct among all the actual positive observations.
+It is defined as follows:
+
+$$
+\text{Recall} = \frac{TP}{TP + FN}
+$$
+
+The F1-score is the harmonic mean of the precision and the recall.
+It is defined as follows:
+
+$$
+\text{F1-score} = \frac{2 \times \text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}
+$$
+
+The F1-score is a good metric to evaluate the performance of a model when the classes are imbalanced, i.e. when the number of observations for each class is significantly different.
+
+In R, you can use the `caret` package to compute the confusion matrix and the evaluation metrics.
+The syntax for `confusionMatrix()` is `confusionMatrix(xtab)` where:
+
+- `xtab`: is a `table(predicted, actual)` object.
+- `predicted`: is a vector of predicted labels
+- `actual`: is a vector of true labels
+
+You can access the confusion matrix using the `$table` attribute.
+
+To compute the recall, precision and F1-score, you can use the confusion matrix or you can use the corresponding functions from the `caret` package.
+Respectively for the recall, precision and F1-score the syntax is `recall(xtab)`, `precision(xtab)` and `F_meas(xtab)`.
+
+
+*NB. the predicted and actual labels must be **factors**.*
+*NB. the predicted and actual labels must be **relevelled** to the failure case (label=1). For this, see the `relevel` function*
+
+**Question**: Compute the confusion matrix and the evaluation metrics for the logistic regression model you trained earlier.
+
+```{R}
+    # WARNING:
+    # Before computing the confusion matrix, we use the relevel function
+    # to tell that we want the measures that correspond to the failure case (label=1)
+    
+    Glm_Test_Cm     #Confusion matrix of test data as earlier computed
+    Glm_Train_Cm    #Confusion matrix of train data as earlier computed
+
+```
+
+```{r}
+#Computing for scaled data of train and test data
+
+  Glm_model_Sca <- glm(data = Train_Scaled, MachineFailure ~., family = "binomial") #Building model
+  Glm_model_Pred_Test_Sca <- predict(Glm_model_Sca, Test_Scaled, type = "response") #Predicting Test
+  Glm_Test_Sca_Cm <- table(Test$MachineFailure, Glm_model_Pred_Test_Sca >= 0.5)
+  Glm_Test_Sca_Cm  
+  
+  Glm_model_Test_Sca_Acc = (44 + 42) / (44 + 42 + 6 + 8)  #computing metrics for Scaled Test data
+  Glm_model_Test_Sca_Pre = (42) / (42 + 6)
+  Glm_model_Test_Sca_Rec = (42) / (42 + 8)
+  Glm_model_Test_Sca_F1 = (2 * Glm_model_Test_Sca_Pre * Glm_model_Test_Sca_Rec) / (Glm_model_Test_Sca_Pre + Glm_model_Test_Sca_Rec) 
+
+  Glm_model_Test_Sca_Acc  #Printing metrics for Scaled Test data
+  Glm_model_Test_Sca_Pre
+  Glm_model_Test_Sca_Rec
+  Glm_model_Test_Sca_F1 
+   
+  Glm_model_Pred_Train_Sca <- predict(Glm_model_Sca, Train_Scaled, type = "response") #Predicting Train
+  Glm_Train_Sca_Cm <- table(Train$MachineFailure, Glm_model_Pred_Train_Sca >= 0.5)
+  Glm_Train_Sca_Cm 
+    
+  Glm_model_Train_Sca_Acc = (163 + 163) / (163 + 163 + 37 + 37)  #computing metrics for Scaled Train data
+  Glm_model_Train_Sca_Acc
+```
+From the metrics of the scaled and the unscaled data for the logistic model, it can be well noted that the accuracy and other metrics are equal in both instances. Hence, it is concluded that scaling has no influence on logistic classification. 
+
+
+# 3. Discovering other models
+In general, it is difficult to know which machine learning model is the best for a given task, unless you have a lot of knowledge about the problem.
+Thus, it is common and important to try different models and compare them to each other.
+
+## 3.1. K-nearest Neighbors
+
+The K-nearest Neighbors (KNN) algorithm is a simple and intuitive algorithm.
+It is a **non-parametric** method used for classification and regression. In this case, we will use it for classification.
+The principle of the KNN algorithm is to classify a new observation by a majority vote of its neighbors.
+The observation is assigned to the class most common among its k nearest neighbors. The number k is a positive integer, typically small.
+For example, if k = 4, then the new observation is assigned to the class that has the most representatives within the 4 nearest neighbors.
+
+The package `class` contains the function `knn()` which is used to train a K-Nearest Neighbors classifier.
+The syntax for `knn()` is `knn(train, test, cl, k)` where:
+
+- `train`: the dataset used for training
+- `test`: the dataset used for testing
+- `cl`: the target of the training dataset
+- `k`: the number of neighbors to use for prediction
+
+Contrary to the logistic regression model, the `knn()` function returns the predicted ***labels of the test set directly***.
+Thus, you do not need to use the `predict()` function. 
+
+*Beware `knn()` does not use categorical features. Thus, you need to remove the categorical features from the dataset before using it!*
+
+
+**Question**: Train a KNN model using the training set and check the accuracy on the test set.
+
+```{R}
+    #TODO: Train a KNN model
+
+  #TODO: Train a KNN model
+    
+  Knn_Train <- Train[,1:5]
+  Knn_Train_Labels <- Train[,6]
+  Knn_Test <- Test[,1:5]
+  Knn_Test_Labels <- Test[,6]
+  Knn_Test_Model <- knn(train = Knn_Train, test = Knn_Test, cl = Knn_Train_Labels, k = 10)
+    
+
+```
+
+
+```{R}
+    #TODO: Check the accuracy, confusion matrix, precision, recall and F1-score of the model on the test set
+  Knn_Test_Cm <- table(Test$MachineFailure, Knn_Test_Model )
+  Knn_Test_Cm 
+
+  Knn_Test_Acc = (41 + 45)/(41 + 45 + 9 + 5)
+  Knn_Test_Pre = 45 / (45 +9)
+  Knn_Test_Rec = 45 / (45 +5)
+  Knn_Test_F1 = (2 * Knn_Test_Pre * Knn_Test_Rec) / (Knn_Test_Pre + Knn_Test_Rec)
+    
+  Knn_Test_Acc
+  Knn_Test_Pre
+  Knn_Test_Rec
+  Knn_Test_F1
+    
+```
+```{r}
+#checking the accuracy on the train set
+  Knn_Train_Model <- knn(train = Knn_Train, test = Knn_Train, cl = Knn_Train_Labels, k = 10)
+ 
+  Knn_Train_Cm <- table(Train$MachineFailure, Knn_Train_Model )
+  Knn_Train_Cm 
+
+  Knn_Train_Acc = (163 + 180)/(163 + 180 + 37 + 20)   
+  Knn_Train_Acc
+```
+
+
+#### Scaling the features
+As you might have noticed, the features of our dataset are of different order of magnitude. For example, ProcessTemperature vary from 306 to 313, while RotationalSpeed vary from 1200 to 2900. 
+This difference in scale can be problematic especially for distance-based algorithms such as KNN.
+To study this, we propose you to rescale the features of the dataset and to train a new KNN model.
+
+You can use the `scale()` function to normalize the features of the train and test sets in order to have a mean of 0 and a standard deviation of 1.
+
+**Question**: Train a new KNN model with the scaled dataset and check the main metrics on the test set.
+
+**Question**: Does scaling the features improve the accuracy of the model? In other words, is KNN sensitive to the scale of the features?
+
+
+```{R}
+  #TODO: Create a new dataset with the scaled features
+  #TODO: Train a KNN model on the scaled dataset
+    
+  Knn_Train_Sca <- Train_Scaled[,1:5]
+  Knn_Train_Labels <- Train[,6]
+  Knn_Test_Sca <- Test_Scaled[,1:5]
+  Knn_Test_Labels <- Test[,6]
+  Knn_Test_Sca_Model <- knn(train = Knn_Train_Sca, test = Knn_Test_Sca, cl = Knn_Train_Labels, k = 10)    
+
+```
+
+```{R}
+    #TODO: Check the accuracy, confusion matrix, precision, recall and F1-score of the model on the scaled test set
+
+  Knn_Test_Sca_Cm <- table(Test$MachineFailure, Knn_Test_Sca_Model )
+  Knn_Test_Sca_Cm 
+
+  Knn_Test_Sca_Acc = (44 + 45)/(44 + 45 + 6 + 5)
+  Knn_Test_Sca_Pre = 44 / (45 +5)
+  Knn_Test_Sca_Rec = 44 / (45 +6)
+  Knn_Test_Sca_F1 = (2 * Knn_Test_Sca_Pre * Knn_Test_Sca_Rec) / (Knn_Test_Sca_Pre + Knn_Test_Sca_Rec)
+    
+  Knn_Test_Sca_Acc 
+  Knn_Test_Sca_Pre 
+  Knn_Test_Sca_Rec 
+  Knn_Test_Sca_F1   
+
+    
+```
+```{r}
+  #predicting and checking the accuracy of the knn on the scaled trained data
+  
+  Knn_Train_Sca_Model <- knn(train = Knn_Train_Sca, test = Knn_Train_Sca, cl = Knn_Train_Labels, k = 10)
+ 
+  Knn_Train_Sca_Cm <- table(Train$MachineFailure, Knn_Train_Sca_Model)
+  Knn_Train_Sca_Cm 
+
+  Knn_Train_Acc = (174 + 180)/(174 + 180 + 36 + 20)   
+  Knn_Train_Acc
+```
+From observation of the metrics of both training and test data, it can be clearly observed that scaling improved the accuracy of the model. 
+
+## 5.2. Decision Tree
+Decision trees are another **non-parametric** method used for classification and regression.
+The decision tree algorithm constructs a binary tree from the training set. 
+Each node of the tree corresponds to a feature of the dataset and each branch corresponds to a value of the feature.
+The leaf nodes of the tree are the predicted labels. 
+The algorithm starts by splitting the training set into two subsets using a feature and a value of this feature.
+Then, it splits the subsets into two other subsets using another feature and a value of this feature, until we reach the leaf nodes.
+
+
+The package `rpart` contains the function `rpart()` which is used to train a Decision Tree classifier.
+The syntax for `rpart()` is `rpart(formula, data, method = "class")` where:
+
+- `formula`: is a symbolic description of the model to be fitted.
+- `data`: the dataset we want to use for training.
+- `method`: in this case, we use "class" to tell that we want a Decision Tree classifier.
+
+
+**Question**: Train a Decision Tree model using the **unscaled** training set.
+```{R}
+    #TODO: Train a Decision Tree model
+    
+    D_Tree_Model <- rpart(MachineFailure~., Train, method = "class")
+    D_Tree_Model
+```
+
+Once trained, you can use the `predict()` function to make predictions on the test set.
+The syntax for `predict()` is `predict(model, newdata, type = "class")` where:
+
+- `model`: the Decision Tree model
+- `newdata`: the dataset we want to use for testing
+- `type`: in this case, we use "class" to tell that we want to predict the class of the test set.
+
+```{R}
+    #TODO: Check the accuracy, confusion matrix, precision, recall and F1-score of the model on the test set
+    D_Tree_Model_Test<- predict(D_Tree_Model, Test, type = "class")
+    
+    D_Tree_Model_Cm <- table(Test$MachineFailure, D_Tree_Model_Test)
+    D_Tree_Model_Acc <- (42 + 39)/(42 + 39 + 11 + 8)
+    D_Tree_Model_Pre <- 42 / (42 + 11)
+    D_Tree_Model_Rec <- 42 / (42 + 8)
+    D_Tree_Model_F1 <- (2 * D_Tree_Model_Pre * D_Tree_Model_Rec)/ (D_Tree_Model_Pre + D_Tree_Model_Rec)
+     
+    D_Tree_Model_Cm
+    D_Tree_Model_Acc
+    D_Tree_Model_Pre
+    D_Tree_Model_Rec
+    D_Tree_Model_F1
+```
+```{r}
+#checking the efficiency of the Decision tree on the train data
+D_Tree_Model_Train <- predict(D_Tree_Model, Train, type = "class")
+    
+D_Tree_Model_Train_Cm <- table(Train$MachineFailure, D_Tree_Model_Train)
+D_Tree_Model_Train_Cm
+D_Tree_Model_Train_Acc <- (179 + 191)/(179 + 191 + 21 + 9)
+D_Tree_Model_Train_Acc
+```
+
+
+The advantage of a Decision Tree is that it highly interpretable. You can plot the Decision Tree using the `rpart.plot()` function,
+from the package `rpart.plot`. The syntax for `rpart.plot()` is 
+`rpart.plot(model, main = "Plot title")`
+where:
+
+- `model`: the Decision Tree model
+- `main`: the title of the plot
+
+Each plotted node shows the following information:
+
+- the predicted class
+- the predicted probability
+- the percentage of observations in the node
+
+For more information on rpart.plot, see the [documentation](http://www.milbo.org/rpart-plot/prp.pdf).
+
+In addition to plotting the Decision Tree, you can also print the decision rules using the `rpart.rules()` function.
+The syntax is `rpart.rules(model)` where `model` is the Decision Tree model.
+
+**Question**: Plot the Decision Tree and describe it.
+
+
+```{R}
+    #TODO: Plot the Decision Tree
+    rpart.plot(D_Tree_Model, main = "Plot of the Decision Tree model")
+```
+The decision tree model uses the ***Rotational speed*** as the main predictor.
+
+```{R}
+    #TODO: Print the decision rules
+    D_Tree_Model
+```
+
+
+**Question**: Are decision trees sensitive to the features scale?
+
+```{R}
+    #TODO: are decision trees sensitive to the features scale?
+    D_Tree_Model_Sca <- rpart(MachineFailure~., Train_Scaled, method = "class") #Training scaled model
+    D_Tree_Model_Test_Sca <- predict(D_Tree_Model_Sca, Test, type = "class")  #predicting on test data
+    
+    D_Tree_Model_Sca_Cm <- table(Test$MachineFailure, D_Tree_Model_Test_Sca)  #Confusion matrix
+    D_Tree_Model_Sca_Acc <- (50 + 0)/(50 + 0 + 0 + 50)
+    D_Tree_Model_Sca_Pre <- 50 / (50 + 50)
+    D_Tree_Model_Sca_Rec <- 50 / (50 + 0)
+    D_Tree_Model_Sca_F1 <- (2 * D_Tree_Model_Sca_Pre * D_Tree_Model_Sca_Rec)/ (D_Tree_Model_Sca_Pre + D_Tree_Model_Sca_Rec)
+     
+    D_Tree_Model_Sca_Cm
+    D_Tree_Model_Sca_Acc 
+    D_Tree_Model_Sca_Pre 
+    D_Tree_Model_Sca_Rec 
+    D_Tree_Model_Sca_F1
+    
+```
+
+```{r}
+#Testing the model on the scaled train data
+D_Tree_Model_Train_Sca <- predict(D_Tree_Model_Sca, Train_Scaled, type = "class") #Predicting
+    
+D_Tree_Model_Train_Sca_Cm <- table(Train_Scaled$MachineFailure, D_Tree_Model_Train_Sca)    #Confusion matrix
+D_Tree_Model_Train_Sca_Cm
+D_Tree_Model_Train_Acc <- (179 + 191)/(179 + 191 + 21 + 9)
+D_Tree_Model_Train_Acc
+```
+It can be noticed that scaling improved the accuracy on the train data but reduced the accuracy on the test data. 
+
+## 5.3. Neural Network
+A neural network is a **parametric** method used for classification and regression.
+A neural network is composed of several layers of neurons.
+Each neuron of a layer is connected to all the neurons of the previous layer.
+The first layer is called the input layer and the last layer is called the output layer.
+The layers between the input and the output layers are called the hidden layers.
+Each neuron of a layer computes a linear combination of the outputs of the neurons of the previous layer.
+Then, it applies a non-linear function to the result of the linear combination.
+The number of neurons in the hidden layers can vary from one neural network to another, while for the output layer it depends on the number of classes in the classification problem.
+For a binary classification problem, the output layer contains one neuron which correponds to the probability of the positive class $P(y_{pred} = 1 | X)$.
+
+In this section, we will use a simple neural network with one hidden layer.
+The package `nnet` contains the function nnet() which is used to train a Neural Network classifier.
+The syntax for nnet() is `nnet(formula, data, size, decay = 0, maxit = 100, linout = FALSE)` where:
+
+- `formula`: is a symbolic description of the model to be fitted.
+- `data`: the dataset we want to use for training.
+- `size`: the number of neurons in the hidden layer.
+- `decay`: the decay parameter. For each neural network weight $w_i$, the weight decay is $\lambda w_i$ where $\lambda$ is the decay parameter. The default value is 0, but you can use small values of the order of $10^{-4}$ or less.
+- `maxit`: the maximum number of iterations for the training.
+- `linout`: a logical value indicating if the output layer should be linear or not. In this case, we use FALSE to tell that we want a non-linear output layer (the logistic output layer will be used).
+
+*NB. Make sure to convert the target variable to a factor variable before training the model, otherwise you will get an error when using the `predict()` function.*
+
+```{R}
+    #TODO: Train a Neural Network model
+    
+    NN_Model <- nnet(MachineFailure~., data = Train, size = 6, decay = 0, maxit = 100, linout = FALSE)
+```
+
+
+Use the `predict()` function to make predictions on the test set. The syntax is the same as for the Decision Tree model.
+
+```{R}
+    #TODO: Check the accuracy, confusion matrix, precision, recall and F1-score of the model on the test set
+
+    NN_Model_Test_pred <- predict(NN_Model, Test)
+
+    NN_Model_Cm <- table(Test$MachineFailure, NN_Model_Test_pred >=.5)
+    
+    NN_Model_Acc <- (50 + 0)/(50 + 0 + 0 + 50)
+    NN_Model_Pre <- 50 / (50 + 50)
+    NN_Model_Rec <- 50 / (50 + 0)
+    NN_Model_F1 <- (2 * NN_Model_Pre * NN_Model_Rec)/ (NN_Model_Pre + NN_Model_Rec)
+     
+    NN_Model_Cm
+    NN_Model_Acc 
+    NN_Model_Pre 
+    NN_Model_Rec 
+    NN_Model_F1
+
+```
+```{r}
+#checking the accuracy on the train data
+
+  NN_Model_Train_pred <- predict(NN_Model, Test)  #predicting on train data
+  NN_Model_Train_Cm <- table(Test$MachineFailure, NN_Model_Train_pred >=.5) #train data confusion matrix     
+  NN_Model_Train_Cm
+  
+  NN_Model__Train_Acc <- (50 + 0)/(50 + 0 + 0 + 50)  #accuracy on train data
+  NN_Model__Train_Acc
+```
+
+**Question**: are neural networks sensitive to the features scale?
+
+```{R}
+#TODO: are neural networks sensitive to the features scale?
+#Training the NN model on scaled data
+NN_Model_Sca <- nnet(MachineFailure~., data = Train_Scaled, size = 6, decay = 0, maxit = 100, linout = FALSE)
+
+
+    NN_Model_Test_Sca_pred <- predict(NN_Model_Sca, Test_Scaled)
+
+    NN_Model_Sca_Cm <- table(Test$MachineFailure, NN_Model_Test_Sca_pred >=.5)
+    
+    NN_Model_Sca_Acc <- (38 + 43)/(38 + 43 + 12 + 7)
+    NN_Model_Sca_Pre <- 43 / (43 + 12)
+    NN_Model_Sca_Rec <- 43 / (43 + 12)
+    NN_Model_Sca_F1 <- (2 * NN_Model_Sca_Pre * NN_Model_Sca_Rec)/ (NN_Model_Sca_Pre + NN_Model_Sca_Rec)
+     
+    NN_Model_Sca_Cm
+    NN_Model_Sca_Acc 
+    NN_Model_Sca_Pre 
+    NN_Model_Sca_Rec 
+    NN_Model_Sca_F1
+```
+```{r}
+#checking the accuracy of the scaled NN model on the scaled train data
+
+  NN_Model_Train_Sca_pred <- predict(NN_Model_Sca, Train_Scaled)  #predicting on scaled train data
+  N_Model_Train_Sca_Cm <- table(Train_Scaled$MachineFailure, NN_Model_Train_Sca_pred > 0.5)  #data confusion matrix     NN_Model_Train_Cm
+  N_Model_Train_Sca_Cm
+  
+  NN_Model__Train_Acc <- (193 + 193)/(193 + 193 + 7 + 7)  #accuracy on train data
+  NN_Model__Train_Acc
+
+```
+***The scaled data greatly improved the accuracy of the prediction***. Therefore, it can be concluded that Neural networks are sensitive to the scaling feature
+
+
+## 5.4. Support Vector Machine
+A Support Vector Machine is a supervised learning model that can be used for both classification and regression problems.
+The principle of a Support Vector Machine is to find a hyperplane that separates the data into two classes. A hyperplane is simply a generalization of a line in higher dimensions. In 2D, a hyperplane is a line, in 3D, a hyperplane is a plane, and in higher dimensions, we talk about hyperplanes.
+The hyperplane is chosen in such a way that it maximizes the distance between the hyperplane and the nearest data points of each class.
+
+The package `e1071` contains the function `svm()` which is used to train a Support Vector Machine classifier.
+The syntax for `svm()` is `svm(formula, data, type = "C-classification")` where:
+
+- `formula`: is a symbolic description of the model to be fitted.
+- `data`: the dataset we want to use for training.
+- `type`: the type of the SVM model. In this case, we use "C-classification" to tell that we want a classification model.
+
+
+```{R}
+    #TODO: Train a Support Vector Machine model
+    
+    SVM_Model <- svm(MachineFailure~., Train, type = "C-classification")
+```
+
+Once train, you can use the `predict()` function to make predictions on the test set.
+The syntax is `predict(model, newdata)` where:
+
+- `model`: the Support Vector Machine model
+- `newdata`: the dataset we want to use for testing
+
+```{R}
+    #TODO: Check the accuracy, confusion matrix, precision, recall and F1-score of the model on the test set
+
+    SVM_Test_pred <- predict(SVM_Model, Test)
+
+    SVM_Test_Cm <- table(Test$MachineFailure, SVM_Test_pred)
+    SVM_Test_Acc <- (41 + 48)/(41 + 48 + 9 + 2)
+    SVM_Test_Pre <- (48)/(48 + 9)
+    SVM_Test_Rec <-  48/ (48 + 2)
+    SVM_Test_F1 <- (2 * SVM_Test_Pre * SVM_Test_Rec) / (SVM_Test_Pre + SVM_Test_Rec)
+    
+    SVM_Test_Cm
+    SVM_Test_Acc
+    SVM_Test_Pre 
+    SVM_Test_Rec
+    SVM_Test_F1
+    
+```
+```{r}
+#checking the accuracy of the SVM model on the train data
+
+  SVM_Model_Train_pred <- predict(SVM_Model, Train)  #predicting on train data
+  SVM_Model_Train_Cm <- table(Train$MachineFailure, SVM_Model_Train_pred) #train data confusion matrix     
+  SVM_Model_Train_Cm
+  
+  NN_Model_Train_Acc = (181 + 181)/(181 + 181 + 19 + 19)  #accuracy on train data
+  NN_Model_Train_Acc
+```
+
+
+**Question**: are SVMs sensitive to the features scale?
+
+```{R}
+    #TODO: are SVMs sensitive to the features scale?
+    SVM_Model_Sca <- svm(MachineFailure~., Train_Scaled, type = "C-classification")
+
+    SVM_Test_Sca_pred <- predict(SVM_Model_Sca, Test_Scaled)
+
+    SVM_Test_Sca_Cm <- table(Test$MachineFailure, SVM_Test_Sca_pred)
+    SVM_Test_Sca_Acc <- (41 + 48)/(41 + 48 + 9 + 2)
+    SVM_Test_Sca_Pre <- (48)/(48 + 9)
+    SVM_Test_Sca_Rec <-  48/ (48 + 2)
+    SVM_Test_Sca_F1 <- (2 * SVM_Test_Pre * SVM_Test_Rec) / (SVM_Test_Pre + SVM_Test_Rec)
+    
+    SVM_Test_Sca_Cm
+    SVM_Test_Sca_Acc
+    SVM_Test_Sca_Pre 
+    SVM_Test_Sca_Rec
+    SVM_Test_Sca_F1
+
+```
+```{r}
+SVM_Model_Train_Sca_pred <- predict(SVM_Model_Sca, Train_Scaled)  #predicting on scaled train data
+SVM_Model_Train_Sca_Cm <- table(Train_Scaled$MachineFailure, SVM_Model_Train_Sca_pred )  #data confusion matrix     
+  
+SVM_Model_Train_Sca_Cm
+  
+NN_Model__Train_Acc <- (181 + 181)/(181 + 181 + 19 + 19)  #accuracy on train data
+NN_Model__Train_Acc
+```
+***The scaling feature had no influence on the SVM Model***
+
+
+**Question**: report all the values of the main metrics for all the models. Which model is the best? Why?
+
+You can help yourself by completing the following table.
+
+| Model                          | Training accuracy | Test accuracy | Precision | Recall | F1-score |
+|--------------------------------|-------------------|---------------|-----------|--------|----------|
+| Logistic regression (unscaled) |       0.82        |     0.86      |   0.875   |  0.84  |  0.857   |
+| Logistic regression (scaled)   |       0.82        |     0.86      |   0.875   |  0.84  |  0.857   |
+| KNN (unscaled)                 |       0.857       |     0.86      |   0.833   |  0.9   |  0.865   |
+| KNN (scaled)                   |       0.861       |     0.89      |   0.88    |  0.863 |  0.871   |
+| Decision Tree (unscaled)       |       0.925       |     0.81      |   0.792   |  0.84  |  0.90    |
+| Decision Tree (scaled)         |       0.925       |     0.5       |    0.5    |   1    |  0.667   |
+| Neural Network (unscaled)      |        0.5        |     0.5       |    0.5    |   1    |  0.667   |
+| Neural Network (scaled)        |       0.965       |     0.81      |   0.78    |  0.78  |  0.78    |
+| SVM (unscaled)                 |       0.905       |     0.89      |   0.842   |  0.96  |  0.897   |
+| SVM (scaled)                   |       0.905       |     0.89      |   0.842   |  0.96  |  0.897   |
+|                                |                   |               |           |        |          |
